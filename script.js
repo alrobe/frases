@@ -1,58 +1,23 @@
 /**
- * Interactive Letter with Google Sheets
- * Dates in DD/MM/YYYY format
- * A new message on every OPEN
+ * Interactive Letter client
+ * Messages and password validation are handled by Apps Script.
  */
 
-// =====================
-// GOOGLE SHEETS SETUP
-// =====================
-google.charts.load('current', { packages: ['corechart'] });
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIfngBUYhGFXETeIuG_g1FVmys2cTmFvvppvnkIUGn0ugj1Mo5fIB_GTBcKasH5nb0/exec';
 
-const SHEET_ID = '1t9WezE2NhiJ_AK2cPklX8YOL_xKWlYzm62a2h5frC2U';
-const SHEET_NAME = 'Sheet1';
-const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?sheet=${SHEET_NAME}`;
-const APP_TIME_ZONE = 'America/La_Paz';
-
-// =====================
-// DOM
-// =====================
 const elements = {
     flap: document.getElementById('flap'),
     letter: document.getElementById('letter'),
     openBtn: document.getElementById('openBtn'),
     resetBtn: document.getElementById('resetBtn'),
     floatingHearts: document.getElementById('floatingHearts'),
-    letterText: document.getElementById('letterText')
+    letterText: document.getElementById('letterText'),
+    passwordDialog: document.getElementById('passwordDialog'),
+    passwordInput: document.getElementById('passwordInput')
 };
 
-// =====================
-// STATE
-// =====================
 let isOpen = false;
-let PASSWORD = '';
-let todayMessage = null;
-let randomMessages = [];
-let isDataReady = false;
-
-// =====================
-// UTILS
-// =====================
-function todayISO() {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: APP_TIME_ZONE,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    }).formatToParts(new Date());
-    const values = Object.fromEntries(
-        parts
-            .filter(({ type }) => type !== 'literal')
-            .map(({ type, value }) => [type, value])
-    );
-
-    return `${values.year}-${values.month}-${values.day}`;
-}
+let isRequestPending = false;
 
 function renderMessage(message) {
     const paragraph = document.createElement('p');
@@ -61,149 +26,43 @@ function renderMessage(message) {
     elements.letterText.replaceChildren(paragraph);
 }
 
-function setOpenButtonState(disabled) {
-    elements.openBtn.disabled = disabled;
+function isConfigured() {
+    return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(APPS_SCRIPT_URL);
 }
 
-function handleLoadError(message) {
-    console.error(message);
-    isDataReady = false;
-    setOpenButtonState(true);
-
-    const paragraph = document.createElement('p');
-    paragraph.className = 'message';
-    paragraph.textContent = 'Unable to load the message. Please try again later.';
-
-    const retryButton = document.createElement('button');
-    retryButton.className = 'btn btn-secondary';
-    retryButton.type = 'button';
-    retryButton.textContent = 'RETRY';
-    retryButton.addEventListener('click', loadFromSheet);
-
-    elements.letterText.replaceChildren(paragraph, retryButton);
+function requestPassword() {
+    return new Promise(resolve => {
+        elements.passwordInput.value = '';
+        elements.passwordDialog.addEventListener('close', () => {
+            const password = elements.passwordDialog.returnValue === 'confirm'
+                ? elements.passwordInput.value
+                : null;
+            elements.passwordInput.value = '';
+            resolve(password);
+        }, { once: true });
+        elements.passwordDialog.showModal();
+        elements.passwordInput.focus();
+    });
 }
 
-function isValidDate(year, month, day) {
-    const date = new Date(Date.UTC(year, month - 1, day));
-    return date.getUTCFullYear() === Number(year)
-        && date.getUTCMonth() === Number(month) - 1
-        && date.getUTCDate() === Number(day);
-}
+async function requestMessage(password) {
+    const response = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        body: new URLSearchParams({ password })
+    });
 
-function formatDateFromSheet(value) {
-    if (!value) return null;
-
-    // Google Sheets sends an actual Date object
-    if (Object.prototype.toString.call(value) === '[object Date]') {
-        if (Number.isNaN(value.getTime())) return null;
-
-        const year = value.getFullYear();
-        const month = String(value.getMonth() + 1).padStart(2, '0');
-        const day = String(value.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
+    if (!response.ok) {
+        throw new Error(`The message service returned ${response.status}.`);
     }
 
-    // If it arrives as DD/MM/YYYY text
-    if (typeof value === 'string') {
-        const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-        if (!match) return null;
-
-        const [, day, month, year] = match;
-        if (!isValidDate(year, month, day)) return null;
-
-        return `${year}-${month}-${day}`;
+    const payload = await response.json();
+    if (typeof payload?.ok !== 'boolean') {
+        throw new Error('The message service returned an invalid response.');
     }
 
-    return null;
+    return payload;
 }
 
-// =====================
-// LOAD DATA FROM SHEET
-// =====================
-function loadFromSheet() {
-    isDataReady = false;
-    setOpenButtonState(true);
-    renderMessage('Loading message...');
-
-    try {
-        const query = new google.visualization.Query(SHEET_URL);
-
-        query.send(response => {
-            try {
-                if (response.isError()) {
-                    handleLoadError(response.getMessage());
-                    return;
-                }
-
-                const data = response.getDataTable();
-                const rows = data.getNumberOfRows();
-                const columns = data.getNumberOfColumns();
-
-                // Password from D1
-                if (rows === 0 || columns < 4) {
-                    handleLoadError('The sheet is empty or does not have the required columns.');
-                    return;
-                }
-
-                const sheetPassword = data.getValue(0, 3);
-                if (typeof sheetPassword !== 'string' || sheetPassword.trim() === '') {
-                    handleLoadError('The sheet does not contain a valid password.');
-                    return;
-                }
-
-                PASSWORD = sheetPassword;
-                todayMessage = null;
-                randomMessages = [];
-
-                const today = todayISO();
-
-                for (let i = 0; i < rows; i++) {
-                    const rawDate = data.getValue(i, 0);
-                    const date = formatDateFromSheet(rawDate);
-                    const msgB = data.getValue(i, 1);
-                    const msgC = data.getValue(i, 2);
-
-                    if (date === today && typeof msgB === 'string' && msgB.trim()) {
-                        todayMessage = msgB;
-                    }
-
-                    if (typeof msgC === 'string' && msgC.trim()) {
-                        randomMessages.push(msgC);
-                    }
-                }
-
-                if (!todayMessage && randomMessages.length === 0) {
-                    handleLoadError('The sheet does not contain any valid messages.');
-                    return;
-                }
-
-                // Initial message
-                chooseMessage();
-                isDataReady = true;
-                setOpenButtonState(false);
-            } catch (error) {
-                handleLoadError(error);
-            }
-        });
-    } catch (error) {
-        handleLoadError(error);
-    }
-}
-
-// =====================
-// MESSAGE SELECTOR
-// =====================
-function chooseMessage() {
-    const message = todayMessage
-        ? todayMessage
-        : randomMessages[Math.floor(Math.random() * randomMessages.length)];
-
-    renderMessage(message);
-}
-
-// =====================
-// FLOATING HEARTS
-// =====================
 function createFloatingHearts() {
     elements.floatingHearts.innerHTML = '';
 
@@ -221,30 +80,51 @@ function createFloatingHearts() {
     }
 }
 
-// =====================
-// ENVELOPE LOGIC
-// =====================
-function openEnvelope() {
-    if (isOpen || !isDataReady) return;
+async function openEnvelope() {
+    if (isOpen || isRequestPending || !isConfigured()) return;
 
-    const input = prompt('Ingresa la contraseña 😉');
+    const password = await requestPassword();
+    if (password === null) return;
 
-    if (input !== PASSWORD) {
-        alert('Solo Paty puede abrir este mensaje!!! 😠');
-        return;
-    }
-
-    // A new message on every OPEN
-    chooseMessage();
-
-    isOpen = true;
-    elements.flap.classList.add('open');
-
-    setTimeout(createFloatingHearts, 200);
-    setTimeout(() => elements.letter.classList.add('revealed'), 300);
-
+    isRequestPending = true;
     elements.openBtn.disabled = true;
-    elements.resetBtn.disabled = false;
+    elements.openBtn.classList.add('is-loading');
+    elements.openBtn.setAttribute('aria-busy', 'true');
+    elements.resetBtn.disabled = true;
+    renderMessage('Verifying password...');
+
+    try {
+        const result = await requestMessage(password);
+
+        if (!result.ok) {
+            renderMessage('Enter the password to open this message.');
+            alert('Solo Paty puede abrir este mensaje!!! 😠');
+            return;
+        }
+
+        if (typeof result.message !== 'string' || !result.message.trim()) {
+            throw new Error('The message service did not return a message.');
+        }
+
+        renderMessage(result.message);
+        isOpen = true;
+        elements.flap.classList.add('open');
+
+        setTimeout(createFloatingHearts, 200);
+        setTimeout(() => elements.letter.classList.add('revealed'), 300);
+
+        elements.resetBtn.disabled = false;
+    } catch (error) {
+        console.error(error);
+        renderMessage('Unable to verify the password. Please try again later.');
+        alert('No se pudo abrir el mensaje. Inténtalo de nuevo más tarde.');
+    } finally {
+        isRequestPending = false;
+        elements.openBtn.classList.remove('is-loading');
+        elements.openBtn.removeAttribute('aria-busy');
+        elements.openBtn.disabled = isOpen;
+        elements.resetBtn.disabled = !isOpen;
+    }
 }
 
 function resetEnvelope() {
@@ -253,17 +133,19 @@ function resetEnvelope() {
     elements.flap.classList.remove('open');
     elements.floatingHearts.innerHTML = '';
 
-    setOpenButtonState(!isDataReady);
+    elements.openBtn.disabled = false;
     elements.resetBtn.disabled = true;
+    renderMessage('Enter the password to open this message.');
 }
 
-// =====================
-// INIT
-// =====================
-google.charts.setOnLoadCallback(() => {
-    elements.openBtn.addEventListener('click', openEnvelope);
-    elements.resetBtn.addEventListener('click', resetEnvelope);
-    setOpenButtonState(true);
-    elements.resetBtn.disabled = true;
-    loadFromSheet();
-});
+elements.openBtn.addEventListener('click', openEnvelope);
+elements.resetBtn.addEventListener('click', resetEnvelope);
+elements.resetBtn.disabled = true;
+
+if (isConfigured()) {
+    elements.openBtn.disabled = false;
+    renderMessage('Enter the password to open this message.');
+} else {
+    elements.openBtn.disabled = true;
+    renderMessage('This app has not been configured yet.');
+}
