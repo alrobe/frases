@@ -4,6 +4,7 @@
  */
 
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyIfngBUYhGFXETeIuG_g1FVmys2cTmFvvppvnkIUGn0ugj1Mo5fIB_GTBcKasH5nb0/exec';
+const SESSION_TOKEN_KEY = 'interactive-letter-session-token';
 
 const elements = {
     flap: document.getElementById('flap'),
@@ -18,6 +19,7 @@ const elements = {
 
 let isOpen = false;
 let isRequestPending = false;
+let currentMessage = '';
 
 function renderMessage(message) {
     const paragraph = document.createElement('p');
@@ -45,10 +47,41 @@ function requestPassword() {
     });
 }
 
-async function requestMessage(password) {
+function getSessionToken() {
+    try {
+        return sessionStorage.getItem(SESSION_TOKEN_KEY);
+    } catch (error) {
+        console.warn('Session storage is unavailable.', error);
+        return null;
+    }
+}
+
+function saveSessionToken(token) {
+    try {
+        sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    } catch (error) {
+        console.warn('Session storage is unavailable.', error);
+    }
+}
+
+function clearSessionToken() {
+    try {
+        sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    } catch (error) {
+        console.warn('Session storage is unavailable.', error);
+    }
+}
+
+async function requestMessage({ password, sessionToken, refresh, previousMessage }) {
+    const body = new URLSearchParams();
+    if (typeof password === 'string') body.set('password', password);
+    if (typeof sessionToken === 'string') body.set('sessionToken', sessionToken);
+    if (refresh) body.set('refresh', 'true');
+    if (typeof previousMessage === 'string') body.set('previousMessage', previousMessage);
+
     const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        body: new URLSearchParams({ password })
+        body
     });
 
     if (!response.ok) {
@@ -60,7 +93,31 @@ async function requestMessage(password) {
         throw new Error('The message service returned an invalid response.');
     }
 
+    if (payload.error) {
+        throw new Error('The message service is unavailable.');
+    }
+
     return payload;
+}
+
+async function requestAuthorizedMessage({ refresh, previousMessage }) {
+    const sessionToken = getSessionToken();
+
+    if (sessionToken) {
+        const result = await requestMessage({ sessionToken, refresh, previousMessage });
+        if (result.ok) return result;
+        clearSessionToken();
+    }
+
+    const password = await requestPassword();
+    if (password === null) return null;
+
+    const result = await requestMessage({ password, refresh, previousMessage });
+    if (result.ok && typeof result.sessionToken === 'string') {
+        saveSessionToken(result.sessionToken);
+    }
+
+    return result;
 }
 
 function createFloatingHearts() {
@@ -81,10 +138,7 @@ function createFloatingHearts() {
 }
 
 async function openEnvelope() {
-    if (isOpen || isRequestPending || !isConfigured()) return;
-
-    const password = await requestPassword();
-    if (password === null) return;
+    if (isRequestPending || !isConfigured()) return;
 
     isRequestPending = true;
     elements.openBtn.disabled = true;
@@ -94,7 +148,12 @@ async function openEnvelope() {
     renderMessage('Verifying password...');
 
     try {
-        const result = await requestMessage(password);
+        const result = await requestAuthorizedMessage({
+            refresh: isOpen,
+            previousMessage: currentMessage
+        });
+
+        if (result === null) return;
 
         if (!result.ok) {
             renderMessage('Enter the password to open this message.');
@@ -107,6 +166,7 @@ async function openEnvelope() {
         }
 
         renderMessage(result.message);
+        currentMessage = result.message;
         isOpen = true;
         elements.flap.classList.add('open');
 
@@ -122,13 +182,14 @@ async function openEnvelope() {
         isRequestPending = false;
         elements.openBtn.classList.remove('is-loading');
         elements.openBtn.removeAttribute('aria-busy');
-        elements.openBtn.disabled = isOpen;
+        elements.openBtn.disabled = false;
         elements.resetBtn.disabled = !isOpen;
     }
 }
 
 function resetEnvelope() {
     isOpen = false;
+    currentMessage = '';
     elements.letter.classList.remove('revealed');
     elements.flap.classList.remove('open');
     elements.floatingHearts.innerHTML = '';
