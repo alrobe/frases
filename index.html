@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paty</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://www.gstatic.com/charts/loader.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="envelope-wrapper">
+            <div class="envelope" id="envelope">
+                <div class="envelope-body"></div>
+                <div class="envelope-flap" id="flap"></div>
+            </div>
+            <div class="lock-heart" id="lockHeart"></div>
+            <div class="letter" id="letter">
+                <div class="letter-content">
+                    <div class="heart">☘️</div>
+                    <div class="letter-text" id="letterText">
+                        <p>Cargando mensaje...</p>
+                    </div>
+                    <div class="letter-footer">
+                        <p class="from">De: <span id="fromName">Alfredo</span></p>
+                        <p class="to">Para: <span id="toName">Paty</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-primary" id="openBtn" disabled>OPEN</button>
+            <button class="btn btn-secondary" id="resetBtn" disabled>RESET</button>
+        </div>
+        
+        <!-- Container for floating hearts -->
+        <div class="floating-hearts" id="floatingHearts"></div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
