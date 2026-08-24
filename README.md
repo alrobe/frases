@@ -10,6 +10,7 @@ A Valentine's-style interactive letter that opens with a password. Google Apps S
 - ☁️ Content managed in a private Google Sheet
 - ❤️ Animations and floating hearts
 - 🔄 A new message loads each time the letter opens
+- 🔁 Pressing **OPEN** again while the letter is open refreshes random messages without asking for the password again
 
 ## Architecture
 
@@ -17,7 +18,7 @@ A Valentine's-style interactive letter that opens with a password. Google Apps S
 Browser → Apps Script web app → Private Google Sheet
 ```
 
-The browser only receives a successful response and the selected message. It never receives the spreadsheet ID, sheet contents, or shared password.
+The browser only receives a successful response and the selected message. It never receives the spreadsheet ID, sheet contents, or shared password. After a successful password check, it stores an opaque, server-validated session token for the current browser tab. The token expires after 30 minutes, so opening another message after `RESET` does not require re-entering the password.
 
 ## Google Sheet Structure
 
@@ -53,6 +54,8 @@ Keep the spreadsheet private. The selected sheet must use these columns:
 8. In [`script.js`](script.js), replace `PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE` with that `/exec` URL.
 
 After changing `Code.gs`, create a new Apps Script deployment version and keep the same `/exec` URL. Never add the script properties or the deployment URL's administrative settings to the repository.
+
+The default authorization session expires after 30 minutes. To change that duration, update `SESSION_TTL_SECONDS` in `Code.gs`, then deploy a new version.
 
 ## Local Verification
 
