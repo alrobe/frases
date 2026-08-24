@@ -145,7 +145,7 @@ async function openEnvelope() {
     elements.openBtn.classList.add('is-loading');
     elements.openBtn.setAttribute('aria-busy', 'true');
     elements.resetBtn.disabled = true;
-    renderMessage('Verifying password...');
+    renderMessage('Abriendo...');
 
     try {
         const result = await requestAuthorizedMessage({
