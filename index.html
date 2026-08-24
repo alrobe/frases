@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Paty</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://www.gstatic.com/charts/loader.js"></script>
 </head>
 <body>
     <div class="container">
@@ -33,6 +32,18 @@
             <button class="btn btn-primary" id="openBtn" disabled>OPEN</button>
             <button class="btn btn-secondary" id="resetBtn" disabled>RESET</button>
         </div>
+
+        <dialog class="password-dialog" id="passwordDialog" aria-labelledby="passwordDialogTitle">
+            <form class="password-form" method="dialog" id="passwordForm">
+                <h2 id="passwordDialogTitle">Enter the password</h2>
+                <label for="passwordInput">Password</label>
+                <input id="passwordInput" name="password" type="password" autocomplete="current-password" required>
+                <div class="password-actions">
+                    <button class="btn btn-primary" type="submit" value="confirm">OPEN</button>
+                    <button class="btn btn-secondary" type="submit" value="cancel" formnovalidate>CANCEL</button>
+                </div>
+            </form>
+        </dialog>
         
         <!-- Container for floating hearts -->
         <div class="floating-hearts" id="floatingHearts"></div>
